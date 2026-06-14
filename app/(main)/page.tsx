@@ -213,8 +213,8 @@ export default function Home() {
 
       <main className="mt-12 flex w-full flex-1 flex-col items-center px-4 text-center sm:mt-20">
         <h1 className="my-6 max-w-3xl text-4xl font-bold text-gray-800 sm:text-6xl">
-          Turn your <span className="text-blue-600">idea</span>
-          <br /> into an <span className="text-blue-600">app</span>
+          Turn <span className="text-blue-600">ideas</span> into{" "}
+          <span className="text-blue-600">apps in Minutes</span>
         </h1>
 
         <div className="mt-6 flex flex-wrap justify-center gap-2">
