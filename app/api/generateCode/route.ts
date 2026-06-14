@@ -1,41 +1,50 @@
 import shadcnDocs from "@/utils/shadcn-docs";
-import {
-  TogetherAIStream,
-  TogetherAIStreamPayload,
-} from "@/utils/TogetherAIStream";
+import { openRouterStream, MODEL_REGISTRY } from "@/utils/openRouterStream";
 import dedent from "dedent";
 
 export const runtime = "edge";
 
 export async function POST(req: Request) {
-  let { messages, model, shadcn } = await req.json();
+  let { messages, model = "openrouter/auto", shadcn = true, temperature = 0.2 } = await req.json();
   let systemPrompt = getSystemPrompt(shadcn);
 
-  const payload: TogetherAIStreamPayload = {
-    model,
-    messages: [
-      {
-        role: "system",
-        content: systemPrompt,
-      },
-      ...messages.map((message: any) => {
-        if (message.role === "user") {
-          message.content +=
-            "\nPlease ONLY return code, NO backticks or language names.";
-        }
-        return message;
-      }),
-    ],
-    stream: true,
-    temperature: 0.2,
-  };
-  const stream = await TogetherAIStream(payload);
+  try {
+    const encoder = new TextEncoder();
+    let buffer = "";
 
-  return new Response(stream, {
-    headers: new Headers({
-      "Cache-Control": "no-cache",
-    }),
-  });
+    const readable = new ReadableStream({
+      async start(controller) {
+        try {
+          for await (const chunk of openRouterStream(
+            JSON.stringify(messages) + "\n\nSystem: " + systemPrompt,
+            model,
+            temperature
+          )) {
+            buffer += chunk;
+            controller.enqueue(encoder.encode(chunk));
+          }
+        } catch (error) {
+          console.error("[v0] Stream error:", error);
+          controller.error(error);
+        } finally {
+          controller.close();
+        }
+      },
+    });
+
+    return new Response(readable, {
+      headers: new Headers({
+        "Cache-Control": "no-cache",
+        "Content-Type": "text/event-stream",
+      }),
+    });
+  } catch (error) {
+    console.error("[v0] Error in generateCode:", error);
+    return new Response(JSON.stringify({ error: "Stream failed" }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
 }
 
 function getSystemPrompt(shadcn: boolean) {
@@ -51,9 +60,6 @@ function getSystemPrompt(shadcn: boolean) {
     - Please ONLY return the full React code starting with the imports, nothing else. It's very important for my job that you only return the React code with imports. DO NOT START WITH \`\`\`typescript or \`\`\`javascript or \`\`\`tsx or \`\`\`.
     - ONLY IF the user asks for a dashboard, graph or chart, the recharts library is available to be imported, e.g. \`import { LineChart, XAxis, ... } from "recharts"\` & \`<LineChart ...><XAxis dataKey="name"> ...\`. Please only use this when needed.
   `;
-
-  // Removed because it causes too many errors
-  // - The lucide-react@0.263.1 library is also available to be imported. If you need an icon, use one from lucide-react. Here's an example of importing and using one: import { Camera } from "lucide-react"\` & \`<Camera color="red" size={48} />\`
 
   if (shadcn) {
     systemPrompt += `
